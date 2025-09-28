@@ -1,0 +1,264 @@
+---
+title: "Data 607 Assignment 5A"
+author: "Wendy Romero"
+date: "2025-09-28"
+output: 
+  html_document:
+      theme: cerulean
+      toc: true
+      toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readr)
+library(tidyr)
+library(tidyverse)
+```
+
+# Introduction: 
+
+For this assignment we will tidying airline flight data from a .CSV File, the data we will be tidying is a recreation of a messy data example. The recreated data excel file along with it's .CSV counterpart can both be found in the same GitHub Repository. Once the data is tidy we will be comparing the arrival (on time flights) and delayed rates for the two airlines in the data.
+
+We will use the following libraries: 
+
+-  The **dplyr** library 
+-  The **readr** library 
+-  The **tidyr** library 
+
+All of the above libraries are part of the tidyverse library, I started out just using the dplyr library, then realized I needed the readr and tidyr library, until finally I called the entire **tidyverse** library. 
+
+
+To start let us read in the recreated data from a csv file.
+
+```{r readLines}
+url <- ("https://raw.githubusercontent.com/WendyR20/DATA-607-Assignment-5A/refs/heads/main/airline_info%20-%20Sheet1.csv")
+airline_flights <- read_csv(url, col_names = FALSE)
+
+#Let's take a look at the airline_flight data
+airline_flights
+```
+
+Now that the data has been read in we can see that the mixed nature of the csv file means we have messy data, it's in a wide format and has many missing values. Let us try to remedy that by pivoting our data so it's in long format. We will want to fill in some of the missing data first.
+
+## Filling in Missing Data and Pivoting
+
+Before beginning to restructure our data I must add a note:
+I did some count analysis in my recreated file, counting the number of Alaska airlines destinations that had more than 100 on time flights, and then doing the same with Am West Airlines. Unfortunately, I could not find a way to keep the cells with the count analysis I did in the excel file.
+
+```{r }
+flights <- airline_flights[1:6, ]
+```
+
+Let's rename each column.
+
+```{r }
+names(flights) <- c("Airline", "Status", "LosAngeles", "Phoenix", "SanDiego", "SanFrancisco", "Seattle")
+
+names(flights)
+```
+
+Now we can fill in the missing values in the Airline column with the appropriate airline name.
+
+```{r }
+#fill in blanks in airline
+flights <- flights %>%
+  fill(Airline)
+
+flights
+```
+
+Our data is looking much neater, but right now our first row is repeating our column names and serves no purpose. Let us drop that first row.
+
+```{r }
+#drop first row, it's a repeat
+
+flights <- flights %>% slice(-1)
+```
+
+Great! Now, we can pivot our data, and take it from a wide-format to a long-format! The purpose of our first pivot is so that each city has it's own row rather than it's own column so we will be pivoting our City to a long format. Once that is done we will do pivot our Status column into a wide format, we want to split the column an create two columns; one column for 'On Time' and another for 'Delayed' flight counts. 
+
+```{r }
+#pivot
+
+flights_long <- flights %>%
+  pivot_longer(
+    cols = LosAngeles:Seattle,
+    names_to = "City",
+    values_to = "NumFlights"
+  ) %>%
+  pivot_wider(
+    names_from = Status,
+    values_from = NumFlights
+  )
+```
+
+Let's take a look at our data.
+
+```{r }
+glimpse(flights_long)
+```
+
+And again the data looks much neater, but let's not stop there. Let's rename the on time and delayed columns.
+
+```{r }
+#rename on time column for a neater look
+flights_long2 <- flights_long %>%
+  rename(On_Time = `on time`,
+         Delayed = delayed)
+
+flights_long2
+```
+
+Now let's deal with the last column, full of NA's. We can popultae this column with the total count of flights for each City from each Airline.
+
+To do this calculation we must first ensure both the On Time and Delayed columns are of the numeric data type.
+
+```{r }
+flights_long2$On_Time <- as.numeric(flights_long2$On_Time)
+flights_long2$Delayed <- as.numeric(flights_long2$Delayed)
+
+glimpse(flights_long2)
+```
+
+Now we can populate the missing values column with the total flights count.
+
+```{r }
+
+flights_long2 <- flights_long2 %>%
+  rename(Total_Flights = `NA`)
+
+flights2 <- flights_long2 %>%
+  mutate(Total_Flights = On_Time + Delayed)
+```
+
+Having a column with the total flight count per airline per city allows us to do more analysis, we can now compare the percentage of both delays and arrival rates for the two airlines.
+
+## Comparing the Overall Arrival and Delay Rates of AM WEST and ALASKA Airlines
+
+Let's first create a table comparing the arrival and delay rates of the two airlines. 
+
+```{r arrdelay percent}
+
+Airline_ArrDelay <- flights2 %>%
+  group_by(Airline) %>%
+  summarise(
+    Arrival_Percent = sum(On_Time)/sum(Total_Flights),
+    Delay_Percent = sum(Delayed)/sum(Total_Flights)
+  ) %>%
+  ungroup()
+
+
+#Let's make this actually look like a percentage
+
+Airline_ArrDelay2 <- Airline_ArrDelay %>%
+  mutate(Arrival_Percent = Arrival_Percent *100,
+         Delay_Percent = Delay_Percent *100)
+
+#And Round Our Percentages
+
+Airline_ArrDelay2 <- Airline_ArrDelay2 %>%
+  mutate(across(c(Arrival_Percent, Delay_Percent),~round(.,digits = 2)))
+
+Airline_ArrDelay2
+```
+
+
+Now that we've made the comparison let's make graphs comparing the airline arrival rates and then further down, the airline delay rates.
+
+Let's start with the graph for arrival rates.
+
+```{r arr percent plot}
+
+ggplot(Airline_ArrDelay2, aes(x = Airline, y = Arrival_Percent, fill = Airline)) +
+  geom_col() + 
+  labs(
+    title = ("Comparing Airline Arrival Rates"),
+    x = "Airlines",
+    y = "Arrival Rate (Percentage)"
+  )
+```
+
+**We can see from the graph that AM West Airlines has a higher percentage of flights arriving on time than Alaska airlines.**
+
+Now let's look at graph for the delay rates.
+
+```{r delay percent plot}
+
+ggplot(Airline_ArrDelay2, aes(x = Airline, y = Delay_Percent, fill = Airline)) +
+  geom_col() + 
+  scale_fill_manual(values = c("ALASKA" = "green", "AM WEST" = "purple"))+
+  labs(
+    title = ("Comparing Airline Arrival Rates"),
+    x = "Airlines",
+    y = "Delay Rate (Percentage)"
+  )
+
+```
+
+**We can see from the graph that ALASKA Airlines has a higher percentage of delayed flights than Alaska airlines. Comparing the two airlines' overall flight performances would lead us to believe ALASKA airlines is outperforming AM WEST.**
+
+### Arrival and Delay Rates Across the Five Cities
+
+Let's do some more analysis, let's compare the percentage of both delays and arrival rates across the five cities for the two airlines.
+
+```{r }
+  
+AirlineCity_ArrDelay <- flights2 %>%
+    group_by(Airline, City) %>%
+    summarise(
+      Arrival_Percent = sum(On_Time)/sum(Total_Flights) *100,
+      Delay_Percent = sum(Delayed)/sum(Total_Flights) *100,
+      .groups = "drop"
+    ) %>%
+    ungroup()
+
+AirlineCity_ArrDelay
+
+```
+
+Let's take a look back at counts
+```{r }
+flights2
+```
+
+Now that we've made the comparison let's make a graph comparing the airline arrival rates city-by-city.
+
+```{r }
+ggplot(AirlineCity_ArrDelay, aes(x = City, y = Arrival_Percent, fill = Airline)) +
+  geom_col(position = "dodge") + 
+  labs(
+    title = ("Comparing Airline Arrival Rates for Five Cities"),
+    x = "Airlines",
+    y = "Arrival Rate City-By-City (Percentage)"
+  )
+```
+
+**We can see that it is ALASKA airlines that has the higher percentange of on time flights city-by-city, not AM WEST.**
+
+Now that we've made the comparison let's make a graph comparing the airline delay rates city-by-city.
+
+```{r }
+ggplot(AirlineCity_ArrDelay, aes(x = City, y = Delay_Percent, fill = Airline)) +
+  geom_col(position = "dodge") + 
+  scale_fill_manual(values = c("ALASKA" = "green", "AM WEST" = "purple")) +
+  labs(
+    title = ("Comparing Airline Arrival Rates for Five Cities"),
+    x = "Airlines",
+    y = "Delay Rate City-By-City (Percentage)"
+  )
+```
+
+**We can see from this graph that in fact ALASKA airlines had the better flight performance city-by-city when compared to AM WEST airlines, which is not what we would have assumed from only looking at the overall performance. When comparing the two airlines' flight performances city-by-city we see that ALASKA outperforms AM WEST**
+
+## The Discrepancy Between AM WEST Airlines and ALASKA Airlines Flight Performances City-by-City and Overall. 
+
+When we only compare AM WEST and ALASKA airlines overall flight performances AM WEST seems like the better performing airline with an overall higher percentage of on time flights and overall lower percentage of delayed flights. 
+
+However when we look at and compare the flight performances of the two airlines city-by-city we get a different understanding of the data. City-by-city we see that ALASKA airlines is in fact outperforming AM WEST in every city, with lower flight delay rates and higher on time flight rates. 
+
+To understand why there exists this discrepancy in the performances of the two airlines when compared overall and when compared city-by-city we must look back at the flight counts. AM WEST has far more flights departing overall than Alaska does, in particular the number of AM WEST flights departing from just Phoenix is greater than all the ALASKA flights departing from every city combined. AM WEST performed extremely well in Phoenix with it's highest on time flight rate and lowest delay rate. When we look at overall data, AM WEST's performance in Phoenix smooths over that it unperformed in every city compared to ALASKA airlines. 
+
+
